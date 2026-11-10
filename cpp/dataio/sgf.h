@@ -247,7 +247,7 @@ struct CompactSgf {
   Rules getRulesOrFailAllowUnspecified(const Rules& defaultRules) const;
   Rules getRulesOrWarn(const Rules& defaultRules, const std::function<void(const std::string& msg)>& f) const;
 
-  void setupInitialBoardAndHist(const Rules& initialRules, Board& board, Player& nextPla, BoardHistory& hist, const BoardHistoryModes& modes) const;
+  void setupInitialBoardAndHist(const Rules& initialRules, Board& board, Player& nextPla, BoardHistory& hist, const BoardHistoryModes& modes, const std::vector<std::string>& wallPoints = {}) const;
   void playMovesAssumeLegal(Board& board, Player& nextPla, BoardHistory& hist, int64_t turnIdx) const;
   void setupBoardAndHistAssumeLegal(const Rules& initialRules, Board& board, Player& nextPla, BoardHistory& hist, int64_t turnIdx, const BoardHistoryModes& modes) const;
   //These throw a StringError upon illegal move.

@@ -651,10 +651,29 @@ Board SymmetryHelpers::getSymBoard(const Board& board, int symmetry) {
     transpose ? board.y_size : board.x_size,
     transpose ? board.x_size : board.y_size
   );
+
+  //新增：先把牆放上去（setWall 要求盤上還沒有棋子，所以要在複製棋子之前）
+  for(int y = 0; y<board.y_size; y++) {
+    for(int x = 0; x<board.x_size; x++) {
+      Loc loc = Location::getLoc(x,y,board.x_size);
+      if(board.colors[loc] != C_WALL)
+        continue;
+      int symX = flipX ? board.x_size - x - 1 : x;
+      int symY = flipY ? board.y_size - y - 1 : y;
+      if(transpose)
+        std::swap(symX,symY);
+      Loc symLoc = Location::getLoc(symX,symY,symBoard.x_size);
+      bool suc = symBoard.setWall(symLoc);
+      testAssert(suc);
+    }
+  }
+
   Loc symKoLoc = Board::NULL_LOC;
   for(int y = 0; y<board.y_size; y++) {
     for(int x = 0; x<board.x_size; x++) {
       Loc loc = Location::getLoc(x,y,board.x_size);
+      if(board.colors[loc] == C_WALL)
+        continue;
       int symX = flipX ? board.x_size - x - 1 : x;
       int symY = flipY ? board.y_size - y - 1 : y;
       if(transpose)
@@ -2333,7 +2352,9 @@ void NNInputs::fillRowV7(
       Loc loc = Location::getLoc(x,y,xSize);
 
       //Feature 0 - on board
-      setRowBin(rowBin,pos,0, 1.0f, posStride, featureStride);
+      if(board.colors[loc] != C_WALL){
+        setRowBin(rowBin,pos,0, 1.0f, posStride, featureStride);
+      }
 
       Color stone = board.colors[loc];
 
@@ -2709,7 +2730,13 @@ void NNInputs::fillRowV7(
   //more games except in case of odd-dame seki.
 
   if(hist.rules.scoringRule == Rules::SCORING_AREA || hist.encorePhase >= 2) {
-    bool boardAreaIsEven = (xSize*ySize) % 2 == 0;
+    int numWalls = 0;
+    for(int y = 0; y<ySize; y++)
+      for(int x = 0; x<xSize; x++)
+        if(board.colors[Location::getLoc(x,y,xSize)] == C_WALL)
+          numWalls++;
+    bool boardAreaIsEven = (xSize*ySize - numWalls) % 2 == 0;
+ 
 
     //What is the parity of the komi values that can produce jigos?
     bool drawableKomisAreEven = boardAreaIsEven;

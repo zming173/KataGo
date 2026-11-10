@@ -119,6 +119,7 @@ struct Board
   static Hash128 ZOBRIST_KO_MARK_HASH[MAX_ARR_SIZE][4];
   static Hash128 ZOBRIST_ENCORE_HASH[3];
   static Hash128 ZOBRIST_SECOND_ENCORE_START_HASH[MAX_ARR_SIZE][4];
+  static Hash128 ZOBRIST_WALL_HASH[MAX_ARR_SIZE];
   static const Hash128 ZOBRIST_PASS_ENDS_PHASE;
   static const Hash128 ZOBRIST_GAME_IS_OVER;
 
@@ -222,6 +223,9 @@ struct Board
   //Resolves any captures and/or suicides that result from setting that stone, including deletions of the stone itself.
   //Returns false if location or color were out of range.
   bool setStone(Loc loc, Color color);
+
+  //Turn an empty on-board point into a wall. Only allowed before any stones are placed.
+  bool setWall(Loc loc);
 
   //Sets the specified stone, including overwriting existing stones, but only if doing so will
   //not result in any captures or zero liberty groups.

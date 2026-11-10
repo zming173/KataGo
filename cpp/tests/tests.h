@@ -25,6 +25,7 @@ namespace Tests {
 
   //testboardarea.cpp
   void runBoardAreaTests();
+  void runWallTests();
 
   //testrules.cpp
   void runRulesTests();

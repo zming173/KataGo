@@ -1815,7 +1815,7 @@ Rules CompactSgf::getRulesOrWarn(const Rules& defaultRules, const std::function<
 }
 
 
-void CompactSgf::setupInitialBoardAndHist(const Rules& initialRules, Board& board, Player& nextPla, BoardHistory& hist, const BoardHistoryModes& modes) const {
+void CompactSgf::setupInitialBoardAndHist(const Rules& initialRules, Board& board, Player& nextPla, BoardHistory& hist, const BoardHistoryModes& modes, const std::vector<std::string>& wallPoints)const {
   Color plPlayer = rootNode.getPLSpecifiedColor();
   if(plPlayer == P_BLACK || plPlayer == P_WHITE)
     nextPla = plPlayer;
@@ -1839,6 +1839,11 @@ void CompactSgf::setupInitialBoardAndHist(const Rules& initialRules, Board& boar
     nextPla = moves[0].pla;
 
   board = Board(xSize,ySize);
+   for(const std::string& s : wallPoints) {
+    Loc loc;
+    if(!Location::tryOfString(s, xSize, ySize, loc) || !board.isOnBoard(loc) || !board.setWall(loc))
+      throw StringError("setupInitialBoardAndHist: invalid wallPoints entry: " + s);
+  }
   bool suc = board.setStonesFailIfNoLibs(placements);
   if(!suc)
     throw StringError("setupInitialBoardAndHist: initial board position contains invalid stones or zero-liberty stones");

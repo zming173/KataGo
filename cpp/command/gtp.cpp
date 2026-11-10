@@ -384,6 +384,8 @@ struct GTPEngine {
 
   //Positions during this game when genmove was called
   std::vector<Sgf::PositionSample> genmoveSamples;
+  //Points to turn into walls whenever a new board is created. Empty means no walls.
+  const std::vector<std::string> wallPoints;
 
   GTPEngine(
     const string& modelFile, const string& hModelFile,
@@ -394,7 +396,8 @@ struct GTPEngine {
     double normAvoidRepeatedPatternUtility, double hcapAvoidRepeatedPatternUtility,
     double delayScale, double delayMax,
     Player persp, int pvLen,
-    std::unique_ptr<PatternBonusTable>&& pbTable
+    std::unique_ptr<PatternBonusTable>&& pbTable,
+    const std::vector<std::string>& walls
   )
     :nnModelFile(modelFile),
      humanModelFile(hModelFile),
@@ -429,7 +432,9 @@ struct GTPEngine {
      genmoveTimer(),
      genmoveTimeSum(0.0),
      genmoveExpectedId(0),
-     genmoveSamples()
+     genmoveSamples(),
+     wallPoints(walls)
+
   {
   }
 
@@ -452,6 +457,17 @@ struct GTPEngine {
   }
 
   void clearStatsForNewGame() {
+  }
+
+ //Places walls on an empty board. Throws if a point is invalid for this board size.
+  void applyWalls(Board& board) const {
+    for(const std::string& s : wallPoints) {
+      Loc loc;
+      if(!Location::tryOfString(s, board.x_size, board.y_size, loc) || !board.isOnBoard(loc))
+        throw StringError("Invalid wallPoints entry for this board size: " + s);
+      if(!board.setWall(loc))
+        throw StringError("Could not place wall at: " + s);
+    }
   }
 
   //Specify -1 for the sizes for a default
@@ -554,6 +570,7 @@ struct GTPEngine {
       isGenmoveParams = true;
 
       Board board(boardXSize,boardYSize);
+      applyWalls(board);
       Player pla = P_BLACK;
       BoardHistory hist(board,pla,currentRules,0,Search::resolveHistoryModes(genmoveParams,nnEval));
       vector<Move> newMoveHistory;
@@ -587,6 +604,7 @@ struct GTPEngine {
     int newXSize = bot->getRootBoard().x_size;
     int newYSize = bot->getRootBoard().y_size;
     Board board(newXSize,newYSize);
+    applyWalls(board);
     Player pla = P_BLACK;
     BoardHistory hist(board,pla,currentRules,0,Search::resolveHistoryModes(genmoveParams,nnEval));
     vector<Move> newMoveHistory;
@@ -599,6 +617,7 @@ struct GTPEngine {
     int newXSize = bot->getRootBoard().x_size;
     int newYSize = bot->getRootBoard().y_size;
     Board board(newXSize,newYSize);
+    applyWalls(board);
     bool suc = board.setStonesFailIfNoLibs(initialStones);
     if(!suc)
       return false;
@@ -1341,14 +1360,25 @@ struct GTPEngine {
   void placeFixedHandicap(int n, string& response, bool& responseIsError) {
     int xSize = bot->getRootBoard().x_size;
     int ySize = bot->getRootBoard().y_size;
-    Board board(xSize,ySize);
+    Board stonesOnly(xSize,ySize);
     try {
-      PlayUtils::placeFixedHandicap(board,n);
+      PlayUtils::placeFixedHandicap(stonesOnly,n);
     }
     catch(const StringError& e) {
       responseIsError = true;
       response = string(e.what()) + ", try place_free_handicap";
       return;
+    }
+
+    Board board(xSize,ySize);
+    applyWalls(board);
+    for(int y = 0; y<ySize; y++) {
+      for(int x = 0; x<xSize; x++) {
+        Loc loc = Location::getLoc(x,y,xSize);
+        //setStone returns false on a wall, so stones that land on walls are skipped
+        if(stonesOnly.colors[loc] == C_BLACK)
+          board.setStone(loc,P_BLACK);
+      }
     }
     testAssert(bot->getRootHist().rules == currentRules);
 
@@ -1365,7 +1395,7 @@ struct GTPEngine {
     for(int y = 0; y<board.y_size; y++) {
       for(int x = 0; x<board.x_size; x++) {
         Loc loc = Location::getLoc(x,y,board.x_size);
-        if(board.colors[loc] != C_EMPTY) {
+        if(board.colors[loc] == C_BLACK) {
           response += " " + Location::toString(loc,board);
         }
       }
@@ -1393,6 +1423,7 @@ struct GTPEngine {
     testAssert(bot->getRootHist().rules == currentRules);
 
     Board board(xSize,ySize);
+    applyWalls(board);
     Player pla = P_BLACK;
     BoardHistory hist(board,pla,currentRules,0,Search::resolveHistoryModes(genmoveParams,nnEval));
     double extraBlackTemperature = 0.25;
@@ -1407,7 +1438,7 @@ struct GTPEngine {
     for(int y = 0; y<board.y_size; y++) {
       for(int x = 0; x<board.x_size; x++) {
         Loc loc = Location::getLoc(x,y,board.x_size);
-        if(board.colors[loc] != C_EMPTY) {
+        if(board.colors[loc] == C_BLACK) {
           response += " " + Location::toString(loc,board);
         }
       }
@@ -2104,6 +2135,10 @@ int MainCmds::gtp(const vector<string>& args) {
   //Defaults to 7.5 komi, gtp will generally override this
   const bool loadKomiFromCfg = false;
   Rules initialRules = Setup::loadSingleRules(cfg,loadKomiFromCfg);
+  std::vector<std::string> wallPoints;
+  if(cfg.contains("wallPoints")){
+    wallPoints = cfg.getStrings("wallPoints");
+  }
   logger.write("Using " + initialRules.toStringNoKomiMaybeNice() + " rules initially, unless GTP/GUI overrides this");
   if(startupPrintMessageToStderr && !logger.isLoggingToStderr()) {
     cerr << "Using " + initialRules.toStringNoKomiMaybeNice() + " rules initially, unless GTP/GUI overrides this" << endl;
@@ -2219,7 +2254,8 @@ int MainCmds::gtp(const vector<string>& args) {
     normalAvoidRepeatedPatternUtility, handicapAvoidRepeatedPatternUtility,
     initialDelayMoveScale,initialDelayMoveMax,
     perspective,analysisPVLen,
-    std::move(patternBonusTable)
+    std::move(patternBonusTable),
+    wallPoints
   );
   engine->setOrResetBoardSize(cfg,logger,seedRand,defaultBoardXSize,defaultBoardYSize,logger.isLoggingToStderr());
 
@@ -3357,6 +3393,7 @@ int MainCmds::gtp(const vector<string>& args) {
         int xSize = engine->bot->getRootBoard().x_size;
         int ySize = engine->bot->getRootBoard().y_size;
         Board board(xSize,ySize);
+        engine->applyWalls(board);
         for(int i = 0; i<pieces.size(); i++) {
           Loc loc;
           bool suc = tryParseLoc(pieces[i],board,loc);
@@ -3534,7 +3571,7 @@ int MainCmds::gtp(const vector<string>& args) {
             //same moves would give if entered via play commands on the bot's own history.
             sgf->setupInitialBoardAndHist(
               sgfRules, sgfInitialBoard, sgfInitialNextPla, sgfInitialHist,
-              Search::resolveHistoryModes(engine->getGenmoveParams(), engine->nnEval)
+              Search::resolveHistoryModes(engine->getGenmoveParams(), engine->nnEval),engine->wallPoints
             );
             sgfInitialHist.setInitialTurnNumber(sgfInitialBoard.numStonesOnBoard()); //Should give more accurate temperaure and time control behavior
             sgfBoard = sgfInitialBoard;
