@@ -28,6 +28,7 @@ Hash128 Board::ZOBRIST_KO_MARK_HASH[MAX_ARR_SIZE][4];
 Hash128 Board::ZOBRIST_ENCORE_HASH[3];
 Hash128 Board::ZOBRIST_BOARD_HASH2[MAX_ARR_SIZE][4];
 Hash128 Board::ZOBRIST_SECOND_ENCORE_START_HASH[MAX_ARR_SIZE][4];
+Hash128 Board::ZOBRIST_WALL_HASH[MAX_ARR_SIZE];
 const Hash128 Board::ZOBRIST_PASS_ENDS_PHASE = //Based on sha256 hash of Board::ZOBRIST_PASS_ENDS_PHASE
   Hash128(0x853E097C279EBF4EULL, 0xE3153DEF9E14A62CULL);
 const Hash128 Board::ZOBRIST_GAME_IS_OVER = //Based on sha256 hash of Board::ZOBRIST_GAME_IS_OVER
@@ -211,6 +212,11 @@ void Board::initHash()
       ZOBRIST_BOARD_HASH2[i][j].hash1 = Hash::splitMix64(ZOBRIST_BOARD_HASH2[i][j].hash1);
     }
   }
+
+//Reseed so that adding wall hashes does not change any existing hash values.
+rand.init("Board::initHash() for ZOBRIST_WALL hashes");
+for(int i = 0; i<MAX_ARR_SIZE; i++)
+  ZOBRIST_WALL_HASH[i] = nextHash();
 
   IS_ZOBRIST_INITALIZED = true;
 }
@@ -629,7 +635,7 @@ bool Board::isEmpty() const {
   for(int y = 0; y < y_size; y++) {
     for(int x = 0; x < x_size; x++) {
       Loc loc = Location::getLoc(x,y,x_size);
-      if(colors[loc] != C_EMPTY)
+      if(colors[loc] == C_BLACK || colors[loc] == C_WHITE)
         return false;
     }
   }
@@ -682,6 +688,16 @@ bool Board::setStone(Loc loc, Color color)
   }
 
   ko_loc = NULL_LOC;
+  return true;
+}
+
+bool Board::setWall(Loc loc) {
+  if(!isOnBoard(loc) || colors[loc] != C_EMPTY)
+    return false;
+  if(numStonesOnBoard() != 0)
+    return false;
+  colors[loc] = C_WALL;
+  pos_hash ^= ZOBRIST_WALL_HASH[loc];
   return true;
 }
 
@@ -750,6 +766,9 @@ void Board::regenChainsFromColors() {
       if(c == C_BLACK || c == C_WHITE) {
         pos_hash ^= ZOBRIST_BOARD_HASH[loc][c];
         chain_head[loc] = NULL_LOC;
+      }
+      else if(c == C_WALL){
+        pos_hash ^= ZOBRIST_WALL_HASH[loc];
       }
     }
   }
@@ -1866,7 +1885,7 @@ void Board::calculateArea(
     for(int y = 0; y < y_size; y++) {
       for(int x = 0; x < x_size; x++) {
         Loc loc = Location::getLoc(x,y,x_size);
-        if(result[loc] == C_EMPTY)
+        if(result[loc] == C_EMPTY && colors[loc] != C_WALL)
           result[loc] = colors[loc];
       }
     }
@@ -1892,7 +1911,7 @@ void Board::calculateIndependentLifeArea(
   for(int y = 0; y < y_size; y++) {
     for(int x = 0; x < x_size; x++) {
       Loc loc = Location::getLoc(x,y,x_size);
-      if(basicArea[loc] == C_EMPTY)
+      if(basicArea[loc] == C_EMPTY && colors[loc] != C_WALL)
         basicArea[loc] = colors[loc];
     }
   }
@@ -2406,6 +2425,9 @@ void Board::checkConsistency() const {
         // if(!empty_list.contains(loc))
         //   throw StringError(errLabel + "Empty list doesn't contain empty location");
         // emptyCount += 1;
+      }
+      else if(colors[loc] == C_WALL) {
+        tmp_pos_hash ^= ZOBRIST_WALL_HASH[loc];
       }
       else
         throw StringError(errLabel + "Non-(black,white,empty) value within board legal area");
